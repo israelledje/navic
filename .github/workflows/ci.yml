@@ -22,6 +22,10 @@ on:
   pull_request:
     branches: [main]
 
+# Forcer Node.js 24 pour éviter les warnings de dépréciation
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Annule les exécutions précédentes du même workflow sur la même branche
 concurrency:
   group: ci-${{ github.ref }}
@@ -186,7 +190,7 @@ jobs:
       - name: "🔨 Compilation du binaire"
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-          go build -o ingestion_service main_ingestion.go
+          go build -o ingestion_service .
           echo "✅ Compilation réussie — $(du -h ingestion_service | cut -f1)"
 
       - name: "🧪 Exécution des tests Go"

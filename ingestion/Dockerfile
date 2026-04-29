@@ -13,7 +13,7 @@ RUN go mod download
 COPY . .
 
 # Compiler l'application
-RUN CGO_ENABLED=0 GOOS=linux go build -o ingestion_service main_ingestion.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o ingestion_service .
 
 # Image finale allégée
 FROM alpine:latest

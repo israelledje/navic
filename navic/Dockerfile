@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Définir le dossier de travail
 WORKDIR /app
@@ -11,9 +11,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copier les requirements et installer
 COPY requirements.txt .
-# Pour gérer un éventuel encodage UTF-16 sur Windows
-RUN pip install --no-cache-dir -r requirements.txt || \
-    (iconv -f utf-16le -t utf-8 requirements.txt > req_utf8.txt && pip install --no-cache-dir -r req_utf8.txt)
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copier le reste du projet
 COPY . .

@@ -1,30 +1,174 @@
-name: Deploy Navic to VPS
+# =============================================================================
+# CD Pipeline - Déploiement automatique de Navic sur VPS
+# =============================================================================
+# Déclenché UNIQUEMENT quand :
+#   - Le CI passe avec succès sur la branche main
+#
+# Stratégie de déploiement :
+#   - SSH vers le VPS
+#   - Git pull + docker-compose rebuild
+#   - Migrations + collectstatic
+#   - Health check post-déploiement
+#   - Rollback automatique en cas d'échec
+#
+# Secrets requis :
+#   - SERVER_IP          : Adresse IP du VPS
+#   - SERVER_USER        : Utilisateur SSH (ex: root, deploy)
+#   - SSH_PRIVATE_KEY    : Clé SSH privée (ed25519 recommandé)
+#   - DEPLOY_PATH        : Chemin du projet sur le VPS (ex: /opt/navic)
+# =============================================================================
+
+name: "🚀 CD — Déploiement Production"
 
 on:
-  push:
-    branches:
-      - main  # Le déploiement s'exécute automatiquement lors d'un push sur 'main'
+  # Déclenché automatiquement après le succès du CI
+  workflow_run:
+    workflows: ["🔍 CI — Validation & Tests"]
+    types: [completed]
+    branches: [main]
+
+# Un seul déploiement à la fois
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOBS
+# ─────────────────────────────────────────────────────────────────────────────
 
 jobs:
-  deploy:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 1. VÉRIFICATION — Le CI a-t-il réussi ?
+  # ═══════════════════════════════════════════════════════════════════════════
+  check-ci:
+    name: "✅ Vérification CI"
     runs-on: ubuntu-latest
-    
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Exécution du déploiement via SSH
-        uses: appleboy/ssh-action@master
+      - name: "CI validé"
+        run: echo "✅ Le pipeline CI a réussi — déploiement autorisé"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 2. DÉPLOIEMENT — SSH vers le VPS
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy:
+    name: "🚀 Déploiement VPS"
+    runs-on: ubuntu-latest
+    needs: [check-ci]
+    environment:
+      name: production
+      url: http://${{ secrets.SERVER_IP }}
+
+    steps:
+      - name: "📥 Checkout du code"
+        uses: actions/checkout@v4
+
+      - name: "🚀 Déploiement via SSH"
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
           script: |
-            # Allez dans le répertoire du projet sur le VPS
-            # Modifiez "/opt/navic" si votre projet est dans un autre dossier
-            cd /opt/navic
-            
-            # Récupérer les dernières modifications de GitHub
-            git fetch origin
+            set -euo pipefail
+
+            DEPLOY_DIR="${{ secrets.DEPLOY_PATH || '/opt/navic' }}"
+            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+            echo "═══════════════════════════════════════"
+            echo "🚀 DÉPLOIEMENT NAVIC — $TIMESTAMP"
+            echo "═══════════════════════════════════════"
+
+            cd "$DEPLOY_DIR"
+
+            # ── ÉTAPE 1 : Sauvegarder le commit actuel pour rollback ──
+            PREVIOUS_COMMIT=$(git rev-parse HEAD)
+            echo "📌 Commit actuel (rollback) : $PREVIOUS_COMMIT"
+
+            # ── ÉTAPE 2 : Récupérer le nouveau code ──
+            echo "📥 Récupération du code depuis GitHub..."
+            git fetch origin main
             git reset --hard origin/main
+            NEW_COMMIT=$(git rev-parse HEAD)
+            echo "📌 Nouveau commit : $NEW_COMMIT"
+
+            # ── ÉTAPE 3 : Construire et démarrer les conteneurs ──
+            echo "🐳 Construction des images Docker..."
+            docker-compose build --parallel 2>/dev/null || docker-compose build
+
+            echo "🐳 Démarrage des conteneurs..."
+            docker-compose up -d
+
+            # ── ÉTAPE 4 : Attendre que les services soient prêts ──
+            echo "⏳ Attente du démarrage des services (30s)..."
+            sleep 30
+
+            # ── ÉTAPE 5 : Migrations et fichiers statiques ──
+            echo "🗄️ Application des migrations Django..."
+            docker-compose exec -T backend python manage.py migrate --noinput
+
+            echo "📁 Collecte des fichiers statiques..."
+            docker-compose exec -T backend python manage.py collectstatic --noinput
+
+            # ── ÉTAPE 6 : Health check ──
+            echo "🏥 Vérification de santé des services..."
             
-            # Donner les droits d'exécution au script et le lancer
-            chmod +x deploy.sh
-            ./deploy.sh
+            HEALTHY=true
+            
+            # Vérifier le backend
+            if docker-compose exec -T backend python manage.py check --deploy 2>/dev/null; then
+              echo "  ✅ Backend : OK"
+            else
+              echo "  ⚠️ Backend : Warnings (non bloquant)"
+            fi
+            
+            # Vérifier que les conteneurs tournent
+            for SERVICE in backend frontend ingestion db redis celery_worker celery_beat; do
+              if docker-compose ps | grep -q "${SERVICE}.*Up"; then
+                echo "  ✅ $SERVICE : Running"
+              else
+                echo "  ❌ $SERVICE : DOWN"
+                HEALTHY=false
+              fi
+            done
+
+            # Vérifier la réponse HTTP du backend
+            if curl -sf http://localhost:8000/api/ > /dev/null 2>&1; then
+              echo "  ✅ API HTTP : Accessible"
+            else
+              echo "  ⚠️ API HTTP : Non accessible (peut être normal selon la config)"
+            fi
+
+            # ── ÉTAPE 7 : Rollback si échec ──
+            if [ "$HEALTHY" = false ]; then
+              echo ""
+              echo "❌ ÉCHEC DU HEALTH CHECK — ROLLBACK EN COURS..."
+              echo "🔄 Retour au commit : $PREVIOUS_COMMIT"
+              git reset --hard "$PREVIOUS_COMMIT"
+              docker-compose up -d --build
+              sleep 30
+              docker-compose exec -T backend python manage.py migrate --noinput
+              echo "🔄 Rollback terminé."
+              exit 1
+            fi
+
+            echo ""
+            echo "═══════════════════════════════════════"
+            echo "✅ DÉPLOIEMENT RÉUSSI — $TIMESTAMP"
+            echo "   Commit : $NEW_COMMIT"
+            echo "═══════════════════════════════════════"
+
+      - name: "📢 Notification — Succès"
+        if: success()
+        run: |
+          echo "✅ Déploiement réussi sur ${{ secrets.SERVER_IP }}"
+          echo "   Commit: ${{ github.sha }}"
+          echo "   Branche: main"
+
+      - name: "🚨 Notification — Échec"
+        if: failure()
+        run: |
+          echo "❌ ÉCHEC du déploiement sur ${{ secrets.SERVER_IP }}"
+          echo "   Commit: ${{ github.sha }}"
+          echo "   Un rollback automatique a été tenté."

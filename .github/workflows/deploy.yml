@@ -13,9 +13,9 @@ jobs:
       - name: Exécution du déploiement via SSH
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.SERVER_HOST }}
+          host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             # Allez dans le répertoire du projet sur le VPS
             # Modifiez "/opt/navic" si votre projet est dans un autre dossier

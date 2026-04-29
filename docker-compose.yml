@@ -1,0 +1,145 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgis/postgis:14-3.3-alpine
+    container_name: navic_db
+    environment:
+      POSTGRES_DB: navic_db
+      POSTGRES_USER: navic_user
+      POSTGRES_PASSWORD: navic_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - navic_network
+
+  redis:
+    image: redis:6-alpine
+    container_name: navic_redis
+    restart: always
+    networks:
+      - navic_network
+
+  backend:
+    build:
+      context: ./navic
+      dockerfile: Dockerfile
+    container_name: navic_backend
+    volumes:
+      - ./navic:/app
+    environment:
+      - DEBUG=True
+      - DB_NAME=navic_db
+      - DB_USER=navic_user
+      - DB_PASSWORD=navic_password
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    restart: always
+    networks:
+      - navic_network
+
+  ingestion:
+    build:
+      context: ./ingestion
+      dockerfile: Dockerfile
+    container_name: navic_ingestion
+    environment:
+      - DJANGO_URL=http://backend:8000/api/track/ingest/
+      - RATE_LIMIT_PER_IP=100
+      - LOG_LEVEL=INFO
+    ports:
+      - "5027:5027"
+      - "5028:5028/udp"
+      - "5029:5029"
+      - "5030:5030/udp"
+      - "5031:5031"
+      - "5032:5032/udp"
+      - "5033:5033"
+      - "5034:5034/udp"
+      - "5035:5035"
+      - "5036:5036/udp"
+      - "5037:5037"
+      - "5038:5038/udp"
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - navic_network
+
+  celery_worker:
+    build:
+      context: ./navic
+      dockerfile: Dockerfile
+    container_name: navic_celery_worker
+    volumes:
+      - ./navic:/app
+    environment:
+      - DEBUG=True
+      - DB_NAME=navic_db
+      - DB_USER=navic_user
+      - DB_PASSWORD=navic_password
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    command: celery -A navic worker -l INFO
+    depends_on:
+      - db
+      - redis
+    restart: always
+    networks:
+      - navic_network
+
+  celery_beat:
+    build:
+      context: ./navic
+      dockerfile: Dockerfile
+    container_name: navic_celery_beat
+    volumes:
+      - ./navic:/app
+    environment:
+      - DEBUG=True
+      - DB_NAME=navic_db
+      - DB_USER=navic_user
+      - DB_PASSWORD=navic_password
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    command: celery -A navic beat -l INFO
+    depends_on:
+      - db
+      - redis
+    restart: always
+    networks:
+      - navic_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: navic_frontend_proxy
+    ports:
+      - "80:80"
+      # - "443:443" # À décommenter lors de l'ajout de SSL/Let's Encrypt
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - navic_network
+
+volumes:
+  postgres_data:
+
+networks:
+  navic_network:
+    driver: bridge

@@ -1,0 +1,31 @@
+# Environnement
+.env
+.venv/
+venv/
+ENV/
+__pycache__/
+*.pyc
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
+
+# Backend
+navic/media/
+navic/static/
+db.sqlite3
+
+# Ingestion (Go)
+ingestion/ingestion
+ingestion/bin/
+
+# BMAD
+bmad/

@@ -1,0 +1,30 @@
+name: Deploy Navic to VPS
+
+on:
+  push:
+    branches:
+      - main  # Le déploiement s'exécute automatiquement lors d'un push sur 'main'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Exécution du déploiement via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # Allez dans le répertoire du projet sur le VPS
+            # Modifiez "/opt/navic" si votre projet est dans un autre dossier
+            cd /opt/navic
+            
+            # Récupérer les dernières modifications de GitHub
+            git fetch origin
+            git reset --hard origin/main
+            
+            # Donner les droits d'exécution au script et le lancer
+            chmod +x deploy.sh
+            ./deploy.sh

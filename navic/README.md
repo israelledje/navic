@@ -89,7 +89,7 @@ BillingPackage.objects.create(
     is_public=True
 )
 
-# Package Professionnel
+# Package Professionnel subtilites+0212
 BillingPackage.objects.create(
     name="Professionnel",
     package_type="professional",

@@ -37,7 +37,7 @@ echo "  ✓ Base de données prête!"
 
 # --- Appliquer les migrations ---
 echo "[2/4] Application des migrations..."
-python manage.py migrate --noinput
+python manage.py migrate --noinput --fake-initial
 echo "  ✓ Migrations appliquées!"
 
 # --- Collecter les fichiers statiques ---

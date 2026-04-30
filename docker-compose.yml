@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgis/postgis:14-3.3-alpine
@@ -10,6 +8,11 @@ services:
       POSTGRES_PASSWORD: navic_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U navic_user -d navic_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: always
     networks:
       - navic_network
@@ -17,6 +20,11 @@ services:
   redis:
     image: redis:6-alpine
     container_name: navic_redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: always
     networks:
       - navic_network
@@ -28,6 +36,7 @@ services:
     container_name: navic_backend
     volumes:
       - ./navic:/app
+      - static_data:/app/staticfiles
     environment:
       - DEBUG=True
       - DB_NAME=navic_db
@@ -38,11 +47,15 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CORS_ALLOWED_ORIGINS=http://localhost:5173
+      - DJANGO_SUPERUSER_EMAIL=support@dis-network.net
+      - DJANGO_SUPERUSER_PASSWORD=Admin@2026
     ports:
       - "8000:8000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: always
     networks:
       - navic_network
@@ -93,8 +106,10 @@ services:
       - REDIS_PORT=6379
     command: celery -A navic worker -l INFO
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: always
     networks:
       - navic_network
@@ -117,8 +132,10 @@ services:
       - REDIS_PORT=6379
     command: celery -A navic beat -l INFO
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: always
     networks:
       - navic_network
@@ -139,6 +156,7 @@ services:
 
 volumes:
   postgres_data:
+  static_data:
 
 networks:
   navic_network:

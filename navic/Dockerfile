@@ -16,8 +16,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copier le reste du projet
 COPY . .
 
+# Rendre le script d'entrypoint exécutable
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Exposer le port
 EXPOSE 8000
 
-# Démarrer avec Daphne pour supporter les WebSockets
+# Entrypoint: migrations, collectstatic, superuser, puis lancement
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Commande par défaut: Daphne (ASGI)
 CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "navic.asgi:application"]

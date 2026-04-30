@@ -16,9 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copier le reste du projet
 COPY . .
 
-# Rendre le script d'entrypoint exécutable
+# Rendre le script d'entrypoint exécutable (et corriger les fins de ligne Windows)
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Exposer le port
 EXPOSE 8000

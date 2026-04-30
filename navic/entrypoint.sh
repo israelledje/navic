@@ -63,7 +63,12 @@ if not User.objects.filter(email=email).exists():
     User.objects.create_superuser(email=email, password=password)
     print(f'  ✓ Superuser créé: {email}')
 else:
-    print(f'  ✓ Superuser existe déjà: {email}')
+    u = User.objects.get(email=email)
+    u.set_password(password)
+    u.is_superuser = True
+    u.is_staff = True
+    u.save()
+    print(f'  ✓ Superuser mis à jour (password reset): {email}')
 "
 
 echo "=========================================="
